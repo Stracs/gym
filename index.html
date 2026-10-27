@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Gym</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="top"><h1 id="title">Heute</h1><span id="clock"></span></header>
+<main id="view"></main>
+<div id="restbar" hidden><span id="resttime">1:30</span><button data-act="rest-add">+15 s</button><button data-act="rest-stop">Stopp</button></div>
+<nav id="tabs">
+  <button data-tab="heute" class="on"><span>🏠</span>Heute</button>
+  <button data-tab="training"><span>🏋️</span>Training</button>
+  <button data-tab="verlauf"><span>📅</span>Verlauf</button>
+  <button data-tab="fortschritt"><span>📈</span>Fortschritt</button>
+  <button data-tab="mehr"><span>⚙️</span>Mehr</button>
+</nav>
+<div id="toast" hidden></div>
+<dialog id="dlg"><div id="dlgbody"></div></dialog>
+<script src="lib/chart.umd.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
