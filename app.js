@@ -1,7 +1,7 @@
 'use strict';
 // Gym – Hannes' Trainings-App. Daten bleiben auf dem Gerät (localStorage + IndexedDB für Fotos).
 
-const VERSION = '1.3.0';
+const VERSION = '1.3.1';
 const KEY = 'gym.v1';
 const MUSCLES = ['Brust', 'Rücken', 'Schultern', 'Bizeps', 'Trizeps', 'Beine vorne', 'Beine hinten', 'Waden', 'Bauch'];
 const LEG_MUSCLES = ['Beine vorne', 'Beine hinten', 'Waden'];
@@ -100,11 +100,14 @@ const BK = {
     } catch (e) { console.warn('Briefkasten:', e); } finally { this.busy = false; if (tab === 'mehr' && !$('#dlg').open) vMehr(); }
   },
 };
-// Kopplung über den Link vom PC: …/gym/#bk=gym1:…  (der Teil nach # geht nie an einen Server)
-(function () { const m = /[#&]bk=([^&]+)/.exec(location.hash); if (!m) return;
-  const p = BK.decode(decodeURIComponent(m[1])); history.replaceState(null, '', location.pathname + location.search);
-  if (p) { BK.pair = p; setTimeout(() => toast('📬 Briefkasten verbunden: Trainings und Fotos gehen ab jetzt an den PC', 4000), 300); }
-  else setTimeout(() => toast('Kopplungs-Link ist kaputt'), 300); })();
+// Home-Bildschirm-App? Auf dem iPhone hat sie einen eigenen Speicher, getrennt von Safari.
+const STANDALONE = (typeof navigator !== 'undefined' && navigator.standalone) || (typeof matchMedia === 'function' && matchMedia('(display-mode: standalone)').matches);
+// Kopplung: ganzer Link (…/gym/#bk=gym1:…) oder nur der Code. Der Teil nach # geht nie an einen Server.
+BK.connect = function (text) { let s = String(text || ''); try { s = decodeURIComponent(s); } catch (e) {}
+  const m = /(gym1:[A-Za-z0-9_-]+)/.exec(s); const p = m && this.decode(m[1]);
+  if (!p) return false; this.pair = p; try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {} return true; };
+(function () { if (!/[#&]bk=/.test(location.hash || '')) return; const ok = BK.connect(location.hash); history.replaceState(null, '', location.pathname + location.search);
+  setTimeout(() => toast(ok ? (STANDALONE ? '📬 Briefkasten verbunden' : '📬 Verbunden, aber nur hier in Safari. In der Home-Bildschirm-App: Mehr → Briefkasten → Link einfügen') : 'Kopplungs-Link ist kaputt', 6000), 300); })();
 addEventListener('online', () => BK.flush());
 
 // ---------- Helfer ----------
@@ -640,7 +643,10 @@ async function vMehr() {
   <div class="card"><h2>📬 Briefkasten zum PC</h2>${BK.pair ? `<div>✅ Verbunden. Trainings, Fotos und Gewicht gehen verschlüsselt an dein Second Brain.</div>
     <div class="mute" style="margin:8px 0">${BK.out.length ? `⏳ ${BK.out.length} wartet auf Netz` : '📭 Alles verschickt'}${localStorage.getItem('gym.bk.last') ? ' · zuletzt ' + new Date(localStorage.getItem('gym.bk.last')).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}</div>
     <div class="row wrap"><button class="btn" data-act="bkflush">🔄 Jetzt senden</button><button class="btn" data-act="bkall">📦 Alles nochmal schicken</button><button class="btn btn-bad" data-act="bkoff">Trennen</button></div>`
-    : `<div class="mute">Nicht verbunden. Öffne einmal den Kopplungs-Link vom PC (QR-Code), dann landen neue Trainings und Fotos automatisch im Second Brain.</div>`}</div>
+    : `<div class="mute">Nicht verbunden. So geht's: QR-Code vom PC mit der Kamera scannen → auf den Link <b>lange drücken</b> → „Link kopieren" → hier einfügen.</div>
+    <input id="bkcode" placeholder="Kopplungs-Link einfügen" autocomplete="off" style="margin-top:8px">
+    <div class="row wrap" style="margin-top:8px"><button class="btn" data-act="bkpaste">📋 Aus Zwischenablage</button><button class="btn btn-acc" data-act="bkpair">Verbinden</button></div>`}
+    ${BK.pair && !STANDALONE ? `<div class="mute" style="margin-top:8px">⚠️ Du bist gerade in Safari. Die App auf dem Home-Bildschirm hat einen eigenen Speicher und muss dort noch einmal verbunden werden.</div>` : ''}</div>
   <div class="card"><h2>💾 Sicherung</h2><div class="row wrap"><button class="btn" data-act="export">⬇️ Daten sichern</button><label class="btn">⬆️ Sicherung laden<input type="file" accept=".json,application/json" data-in="import" hidden></label>
     <button class="btn" data-act="mdexport">📝 Für Second Brain</button></div>
     <div class="mute" style="margin-top:8px">Einmal im Monat sichern. Ohne Sicherung sind die Daten weg, wenn der Browser-Speicher gelöscht wird.</div></div>
@@ -776,6 +782,8 @@ document.addEventListener('click', async ev => {
     case 'dsave': { const i = S.plan.findIndex(d => d.id === editDay.d.id); S.plan[i] = editDay.d; save(); closeDlg(); vMehr(); break; }
     case 'export': S.settings.lastExport = today(); save(); download(`Gym-Sicherung ${today()}.json`, JSON.stringify(S), 'application/json'); toast('Sicherung heruntergeladen'); break;
     case 'mdexport': mdExport(); break;
+    case 'bkpaste': try { $('#bkcode').value = await navigator.clipboard.readText(); } catch (e) { toast('Einfügen ging nicht. Lange ins Feld drücken → Einsetzen'); } break;
+    case 'bkpair': if (BK.connect($('#bkcode').value)) { toast('📬 Verbunden'); BK.flush(); vMehr(); } else toast('Das ist kein Kopplungs-Link'); break;
     case 'bkflush': BK.flush(); toast('Sende …'); break;
     case 'bkall': { if (!confirm('Alle Trainings, Fotos und Gewichte nochmal an den PC schicken?')) break;
       const ph = await DB.all(); [...S.sessions.filter(s => !s.demo).map(s => ({ t: 'training', id: s.id })), ...S.bodyweight.filter(b => !b.demo).map(b => ({ t: 'koerper', id: b.date })), ...ph.map(p => ({ t: 'foto', id: p.id }))]

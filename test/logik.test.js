@@ -75,5 +75,8 @@ t('Briefkasten: Kopplungscode lesen, kaputten ablehnen', () => {
   assert.strictEqual(J(run(`BK.decode(${J(code)})`)), J(o));
   assert.strictEqual(run(`BK.decode('gym1:kaputt')`), null);
   assert.strictEqual(run(`BK.decode('stracs1:abc')`), null);
+  assert.strictEqual(run(`BK.connect(${J('https://stracs.github.io/gym/#bk=' + code)})`), true);
+  assert.strictEqual(run(`BK.pair.p`), o.p);
+  assert.strictEqual(run(`BK.connect('hallo')`), false);
 });
 console.log(`\n${ok} Tests bestanden`);
