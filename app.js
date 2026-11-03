@@ -1,7 +1,7 @@
 'use strict';
 // Gym – Hannes' Trainings-App. Daten bleiben auf dem Gerät (localStorage + IndexedDB für Fotos).
 
-const VERSION = '1.2.1';
+const VERSION = '1.3.0';
 const KEY = 'gym.v1';
 const MUSCLES = ['Brust', 'Rücken', 'Schultern', 'Bizeps', 'Trizeps', 'Beine vorne', 'Beine hinten', 'Waden', 'Bauch'];
 const LEG_MUSCLES = ['Beine vorne', 'Beine hinten', 'Waden'];
@@ -21,13 +21,15 @@ const DEFAULT_EX = [
   ['beinheben', 'Beinheben hängend', 'Bauch'], ['brustpresse', 'Brustpresse', 'Brust'], ['butterfly', 'Butterfly', 'Brust'],
   ['klimmzug', 'Klimmzüge', 'Rücken'], ['kniebeuge', 'Kniebeuge', 'Beine vorne'], ['adduktor', 'Adduktoren', 'Beine hinten'],
   ['rueckenstr', 'Rückenstrecker', 'Rücken'], ['bizcurl', 'Bizeps Curls', 'Bizeps'], ['wrist', 'Wrist Curls (Unterarme)', 'Bizeps'],
+  ['beugerkabel', 'Beinbeuger am Kabelturm', 'Beine hinten'], ['kreuzheben', 'Kreuzheben', 'Beine hinten'], ['dips', 'Dips', 'Trizeps'],
 ].map(([id, name, muscle]) => ({ id, name, muscle }));
 
 const DEFAULT_PLAN = [
   { id: 'push', name: 'Push', icon: '💥', core: true, items: [['bank', '3 × 6-8'], ['schraeg', '3 × 8-10'], ['sdrueck', '3 × 8-10'], ['seitkabel', '3 × 12-15'], ['pushdown', '3 × 10-12'], ['ueberkopf', '3 × 10-12']] },
-  { id: 'pull', name: 'Pull', icon: '🪝', core: true, items: [['latzug', '3 × 8-10'], ['tbar', '3 × 8-10'], ['rudereng', '3 × 10-12'], ['revfly', '3 × 12-15'], ['hammer', '3 × 10-12'], ['spider', '3 × 10-12']] },
-  { id: 'beine', name: 'Beine', icon: '🦵', core: true, items: [['presse', '3 × 8-10'], ['rdl', '3 × 8-10'], ['beuger', '3 × 10-12'], ['strecker', '3 × 12-15'], ['waden', '3 × 12-15'], ['crunch', '3 × 12-15']] },
-  { id: 'schwach', name: 'Schwächen', icon: '🎯', core: false, items: [['hack', '3 × 8-10'], ['schraegfly', '3 × 10-12'], ['seitkh', '4 × 12-15'], ['lateinarm', '3 × 8-12'], ['preacher', '3 × 10-12'], ['beinheben', '3 × max']] },
+  { id: 'pull', name: 'Pull', icon: '🪝', core: true, items: [['latzug', '3 × 8-10'], ['tbar', '3 × 8-10'], ['rudereng', '3 × 10-12'], ['revfly', '3 × 12-15'], ['hammer', '3 × 10-12'], ['spider', '3 × 10-12'], ['beinheben', '3 × max']] },
+  { id: 'beine', name: 'Beine', icon: '🦵', core: true, items: [['presse', '3 × 8-10'], ['rdl', '3 × 8-10'], ['beugerkabel', '3 × 10-12'], ['strecker', '3 × 12-15'], ['waden', '3 × 12-15'], ['crunch', '3 × 12-15']] },
+  // Tag 4 (ab 03.11.): Spaß- und PR-Tag. id bleibt 'schwach', damit alte Daten passen.
+  { id: 'schwach', name: 'Spaß & PR', icon: '🏆', core: false, items: [['bank', '1 × 3-5 (Top-Satz)'], ['klimmzug', '4 × max'], ['dips', '3 × 8-12'], ['seitkh', '3 × 12-15']] },
 ];
 
 // ---------- Speicher ----------
@@ -54,6 +56,56 @@ const DB = { db: null,
   put(p) { return this.tx('readwrite', s => s.put(p)); },
   del(id) { return this.tx('readwrite', s => s.delete(id)); },
 };
+
+// Briefkasten: Trainings und Fotos verschlüsselt (AES-GCM) an Hannes' PC schicken.
+// Der Server (Supabase) sieht nur verschlüsselte Pakete. Schlüssel und Postfach kommen per Link (#bk=…) aufs Handy.
+// Der Schlüssel liegt in eigenem Speicher, nicht in S – so landet er nie in einer Sicherungsdatei.
+const BK_KEY = 'gym.bk', BK_OUT = 'gym.bk.out';
+const BK = {
+  get pair() { try { return JSON.parse(localStorage.getItem(BK_KEY)); } catch (e) { return null; } },
+  set pair(p) { p ? localStorage.setItem(BK_KEY, JSON.stringify(p)) : localStorage.removeItem(BK_KEY); },
+  get out() { try { return JSON.parse(localStorage.getItem(BK_OUT)) || []; } catch (e) { return []; } },
+  set out(a) { localStorage.setItem(BK_OUT, JSON.stringify(a)); },
+  busy: false,
+  // Kopplungscode: Base64url von {u, k, p, s} mit Präfix gym1:
+  decode(code) {
+    try { if (!code.startsWith('gym1:')) return null; let b = code.slice(5).replace(/-/g, '+').replace(/_/g, '/'); b += '==='.slice((b.length + 3) % 4);
+      const o = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(b), c => c.charCodeAt(0))));
+      return o.u && o.k && /^[0-9a-f]{64}$/.test(o.p) && o.s ? o : null; } catch (e) { return null; } },
+  b64(bytes) { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(s); },
+  async encrypt(p, value) {
+    const key = await crypto.subtle.importKey('raw', Uint8Array.from(atob(p.s), c => c.charCodeAt(0)), 'AES-GCM', false, ['encrypt']);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const cipher = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(value))));
+    const all = new Uint8Array(12 + cipher.length); all.set(iv); all.set(cipher, 12); return this.b64(all); },
+  async post(art, payload) {
+    const p = this.pair; const inhalt = await this.encrypt(p, payload);
+    const r = await fetch(`${p.u}/rest/v1/pakete`, { method: 'POST', body: JSON.stringify({ postfach: p.p, geraet: 'gym', art, inhalt }),
+      headers: { apikey: p.k, 'x-stracs-postfach': p.p, 'Content-Type': 'application/json', Prefer: 'return=minimal' } });
+    if (!r.ok) throw new Error('HTTP ' + r.status); },
+  // Auftrag merken und gleich versuchen. Fällt das Netz aus, bleibt er in der Warteschlange.
+  queue(item) { if (!this.pair) return; const o = this.out.filter(x => !(x.t === item.t && x.id === item.id)); o.push(item); this.out = o; this.flush(); },
+  async flush() {
+    if (this.busy || !this.pair || !navigator.onLine) return; this.busy = true;
+    try { for (const item of this.out) {
+        if (item.t === 'training') { const s = S.sessions.find(x => x.id === item.id);
+          if (s) await this.post('ereignisse', { v: 1, device: 'gym', events: [{ typ: 'training', tag: day(s.dayId)?.name || 'Frei',
+            uebungen: s.entries.map(en => ({ name: ex(en.exId).name, muskel: ex(en.exId).muscle, saetze: en.sets.map(st => ({ kg: st.w, wdh: st.r, warm: !!st.warm, rekord: !!st.pr })) })),
+            ...Object.fromEntries(['id', 'date', 'durationMin', 'notes', 'prs'].map(k => [k, s[k]])) }] }); }
+        else if (item.t === 'koerper') { const b = S.bodyweight.find(x => x.date === item.id); if (b) await this.post('ereignisse', { v: 1, device: 'gym', events: [{ typ: 'koerper', ...b }] }); }
+        else if (item.t === 'foto') { const ph = (await DB.all()).find(x => x.id === item.id);
+          if (ph) await this.post('bild', { v: 1, kind: 'photo', id: ph.id, date: ph.date, mime: 'image/jpeg', data: this.b64(new Uint8Array(await ph.blob.arrayBuffer())) }); }
+        this.out = this.out.filter(x => !(x.t === item.t && x.id === item.id));
+        localStorage.setItem('gym.bk.last', new Date().toISOString()); }
+    } catch (e) { console.warn('Briefkasten:', e); } finally { this.busy = false; if (tab === 'mehr' && !$('#dlg').open) vMehr(); }
+  },
+};
+// Kopplung über den Link vom PC: …/gym/#bk=gym1:…  (der Teil nach # geht nie an einen Server)
+(function () { const m = /[#&]bk=([^&]+)/.exec(location.hash); if (!m) return;
+  const p = BK.decode(decodeURIComponent(m[1])); history.replaceState(null, '', location.pathname + location.search);
+  if (p) { BK.pair = p; setTimeout(() => toast('📬 Briefkasten verbunden: Trainings und Fotos gehen ab jetzt an den PC', 4000), 300); }
+  else setTimeout(() => toast('Kopplungs-Link ist kaputt'), 300); })();
+addEventListener('online', () => BK.flush());
 
 // ---------- Helfer ----------
 const $ = s => document.querySelector(s);
@@ -120,7 +172,7 @@ function nextDay() {
   const last = sorted().reverse().find(s => core.some(c => c.id === s.dayId));
   if (!last) return core[0];
   const i = core.findIndex(c => c.id === last.dayId);
-  // Schwächen-Tag vorschlagen, wenn diese Woche alle Pflichttage geschafft sind
+  // Tag 4 (Spaß & PR) vorschlagen, wenn diese Woche alle Pflichttage geschafft sind
   const wk = weekKey(today());
   const doneCore = new Set(S.sessions.filter(s => weekKey(s.date) === wk).map(s => s.dayId));
   if (core.every(c => doneCore.has(c.id)) && !doneCore.has('schwach') && day('schwach')) return day('schwach');
@@ -221,8 +273,8 @@ function vHeute() {
     <div class="card"><h2>🔋 Erholung</h2><div class="grid3">${recovery().map(r => `<div class="stat" style="text-align:left;padding:8px"><span style="color:var(--text);font-size:13px"><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${r.c}"></i> ${esc(r.k)}</span><br><span>${r.d === null ? r.t : r.d === 0 ? 'heute' : `vor ${r.d} T. · ${r.t}`}</span></div>`).join('')}</div>
     <div class="mute" style="margin-top:8px">Faustregel: denselben Muskel nach ca. 48 h wieder hart trainieren.</div></div>`;
   if (S.sessions.length >= 2) h += `<div class="card"><h2>🎯 Schwächster Muskel (14 Tage)</h2><h3>${esc(weak[0].k)}</h3><div class="mute">${Math.round(weak[0].pct * 100)} % vom Ziel · danach: ${esc(weak[1].k)} (${Math.round(weak[1].pct * 100)} %), ${esc(weak[2].k)} (${Math.round(weak[2].pct * 100)} %)</div>
-    ${S.current ? '' : `<br><button class="btn btn-full" data-act="start" data-v="smart">🧠 Smart-Schwächen-Tag starten</button><div class="mute" style="margin-top:6px">Baut Tag 4 aus genau diesen 3 Muskeln. Deine Bonus-Einheit, wenn Zeit ist.</div>`}</div>`;
-  if (!S.sessions.length) h += `<div class="card empty">Noch keine Einheit. Starte oben dein erstes Training.<br>Dein Plan (Push / Pull / Beine / Schwächen) ist schon drin.</div>`;
+    ${S.current ? '' : `<br><button class="btn btn-full" data-act="start" data-v="smart">🧠 Smart-Schwächen-Tag starten</button><div class="mute" style="margin-top:6px">Baut eine Bonus-Einheit aus genau diesen 3 Muskeln, statt Spaß & PR.</div>`}</div>`;
+  if (!S.sessions.length) h += `<div class="card empty">Noch keine Einheit. Starte oben dein erstes Training.<br>Dein Plan (Push / Pull / Beine / Spaß & PR) ist schon drin.</div>`;
   $('#view').innerHTML = h;
 }
 function reportCard() {
@@ -324,6 +376,7 @@ function finishSession() {
   else { c.end = Date.now(); c.durationMin = Math.max(1, Math.round((c.end - c.start) / 60000)); }
   c.prs = c.entries.reduce((a, en) => a + en.sets.filter(s => s.pr).length, 0);
   S.sessions.push(c); S.current = null; stopRest(); recomputePRs(); save();
+  BK.queue({ t: 'training', id: c.id });
   const v = volume(c);
   toast(`💪 Gespeichert: ${c.durationMin} min · ${fmtNum(v)} kg Volumen${c.prs ? ` · ${c.prs} Rekord${c.prs > 1 ? 'e' : ''}` : ''}`, 4000);
   go('heute');
@@ -584,6 +637,10 @@ async function vMehr() {
     <label>Wochenziel (Einheiten)</label><input type="number" data-in="set-weekGoal" value="${S.settings.weekGoal}">
     <label>Bank-Ziel (kg)</label><input type="number" data-in="set-benchGoal" value="${S.settings.benchGoal}">
     <label>Stange (kg)</label><input type="number" data-in="set-bar" value="${S.settings.bar}"></div>
+  <div class="card"><h2>📬 Briefkasten zum PC</h2>${BK.pair ? `<div>✅ Verbunden. Trainings, Fotos und Gewicht gehen verschlüsselt an dein Second Brain.</div>
+    <div class="mute" style="margin:8px 0">${BK.out.length ? `⏳ ${BK.out.length} wartet auf Netz` : '📭 Alles verschickt'}${localStorage.getItem('gym.bk.last') ? ' · zuletzt ' + new Date(localStorage.getItem('gym.bk.last')).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}</div>
+    <div class="row wrap"><button class="btn" data-act="bkflush">🔄 Jetzt senden</button><button class="btn" data-act="bkall">📦 Alles nochmal schicken</button><button class="btn btn-bad" data-act="bkoff">Trennen</button></div>`
+    : `<div class="mute">Nicht verbunden. Öffne einmal den Kopplungs-Link vom PC (QR-Code), dann landen neue Trainings und Fotos automatisch im Second Brain.</div>`}</div>
   <div class="card"><h2>💾 Sicherung</h2><div class="row wrap"><button class="btn" data-act="export">⬇️ Daten sichern</button><label class="btn">⬆️ Sicherung laden<input type="file" accept=".json,application/json" data-in="import" hidden></label>
     <button class="btn" data-act="mdexport">📝 Für Second Brain</button></div>
     <div class="mute" style="margin-top:8px">Einmal im Monat sichern. Ohne Sicherung sind die Daten weg, wenn der Browser-Speicher gelöscht wird.</div></div>
@@ -596,7 +653,7 @@ async function vMehr() {
 }
 async function addPhotos(files) {
   for (const f of files) { const blob = await shrink(f); const d = f.lastModified ? new Date(f.lastModified) : new Date();
-    await DB.put({ id: uid(), date: ymd(d), blob }); }
+    const id = uid(); await DB.put({ id, date: ymd(d), blob }); BK.queue({ t: 'foto', id }); }
   toast('📸 Gespeichert'); vMehr();
 }
 function shrink(file) { // auf max. 1400 px verkleinern, spart Speicher
@@ -707,7 +764,7 @@ document.addEventListener('click', async ev => {
       <div class="mute" style="margin-top:6px">Maße sind freiwillig. Immer morgens, gleiche Stelle.</div><br><button class="btn btn-acc btn-full" data-act="bwsave">Speichern</button>`); break;
     case 'bwsave': { const num = id => parseFloat(($(id).value || '').replace(',', '.')) || null; const kg = num('#bwk'), waist = num('#bwt'), arm = num('#bwa'), chest = num('#bwb');
       if (!kg && !waist && !arm && !chest) break; const d = $('#bwd').value || today(); const old = S.bodyweight.find(p => p.date === d) || {};
-      S.bodyweight = S.bodyweight.filter(p => p.date !== d); S.bodyweight.push({ date: d, kg: kg || old.kg || null, waist: waist || old.waist || null, arm: arm || old.arm || null, chest: chest || old.chest || null }); save(); closeDlg(); render(); break; }
+      S.bodyweight = S.bodyweight.filter(p => p.date !== d); S.bodyweight.push({ date: d, kg: kg || old.kg || null, waist: waist || old.waist || null, arm: arm || old.arm || null, chest: chest || old.chest || null }); save(); BK.queue({ t: 'koerper', id: d }); closeDlg(); render(); break; }
     case 'photo': openDlg(`<div class="row between"><h3>Foto</h3><button class="btn-sm" data-act="close">✕</button></div><img src="${t.querySelector('img').src}" style="width:100%;border-radius:12px"><br><br><button class="btn btn-bad btn-full" data-act="delphoto" data-v="${v}">Foto löschen</button>`); break;
     case 'delphoto': if (confirm('Foto löschen?')) { await DB.del(v); closeDlg(); vMehr(); } break;
     case 'newex': newExercise(() => vMehr()); break;
@@ -719,6 +776,11 @@ document.addEventListener('click', async ev => {
     case 'dsave': { const i = S.plan.findIndex(d => d.id === editDay.d.id); S.plan[i] = editDay.d; save(); closeDlg(); vMehr(); break; }
     case 'export': S.settings.lastExport = today(); save(); download(`Gym-Sicherung ${today()}.json`, JSON.stringify(S), 'application/json'); toast('Sicherung heruntergeladen'); break;
     case 'mdexport': mdExport(); break;
+    case 'bkflush': BK.flush(); toast('Sende …'); break;
+    case 'bkall': { if (!confirm('Alle Trainings, Fotos und Gewichte nochmal an den PC schicken?')) break;
+      const ph = await DB.all(); [...S.sessions.filter(s => !s.demo).map(s => ({ t: 'training', id: s.id })), ...S.bodyweight.filter(b => !b.demo).map(b => ({ t: 'koerper', id: b.date })), ...ph.map(p => ({ t: 'foto', id: p.id }))]
+        .forEach(i => { const o = BK.out.filter(x => !(x.t === i.t && x.id === i.id)); o.push(i); BK.out = o; }); BK.flush(); toast('Sende alles …'); break; }
+    case 'bkoff': if (confirm('Briefkasten trennen? Danach geht nichts mehr an den PC.')) { BK.pair = null; BK.out = []; vMehr(); } break;
     case 'demo': demo(); break;
     case 'undemo': S.sessions = S.sessions.filter(x => !x.demo); S.bodyweight = S.bodyweight.filter(x => !x.demo); recomputePRs(); save(); toast('Beispieldaten entfernt'); go('heute'); break;
     case 'reset': if (confirm('Wirklich ALLE Trainingsdaten löschen? (Fotos bleiben)') && confirm('Sicher? Das geht nicht rückgängig.')) { S = freshState(); save(); go('heute'); } break;
@@ -746,3 +808,4 @@ document.addEventListener('change', async ev => {
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 if (S.current) tab = 'training';
 go(tab);
+BK.flush();

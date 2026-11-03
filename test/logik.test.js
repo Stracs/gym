@@ -7,7 +7,8 @@ const ctx = {
   console, Date, Math, JSON, Set, Object, Array, String, Number, Promise, structuredClone, setInterval: () => 0, clearInterval: () => {}, setTimeout, clearTimeout,
   localStorage: { getItem: k => store[k] ?? null, setItem: (k, v) => { store[k] = v; }, removeItem: k => { delete store[k]; } },
   document: { querySelector: () => any, querySelectorAll: () => [], getElementById: () => null, addEventListener: () => {}, createElement: () => any },
-  navigator: {}, location: { protocol: 'file:' }, scrollTo: () => {}, confirm: () => true, prompt: () => '60',
+  navigator: {}, location: { protocol: 'file:', hash: '' }, scrollTo: () => {}, confirm: () => true, prompt: () => '60', addEventListener: () => {},
+  crypto, TextEncoder, TextDecoder, atob, btoa, Uint8Array,
   Chart: Object.assign(function () { return { destroy() {} }; }, { defaults: { plugins: { legend: { labels: {} } }, font: {} } }),
 };
 vm.createContext(ctx);
@@ -63,5 +64,16 @@ t('Schwächen: ohne Beine sind Beine am schwächsten, Smart-Tag nimmt sie', () =
 t('Aufwärmsätze zählen nicht', () => {
   run(`const s = mkSess('a', '2026-10-01', 'push', [['bank', [[40, 10], [60, 8]]]]); s.entries[0].sets[0].warm = true; S.sessions.push(s);`);
   assert.strictEqual(run(`workSets(S.sessions[0]).length`), 1); assert.strictEqual(run(`volume(S.sessions[0])`), 480);
+});
+t('Plan 03.11.: Bauch an Pull und Beine, Beinbeuger am Kabel', () => {
+  assert.ok(run(`day('pull').items.some(i => ex(i[0]).muscle === 'Bauch') && day('beine').items.some(i => ex(i[0]).muscle === 'Bauch')`));
+  assert.ok(run(`day('beine').items.some(i => i[0] === 'beugerkabel')`));
+});
+t('Briefkasten: Kopplungscode lesen, kaputten ablehnen', () => {
+  const o = { u: 'https://x.supabase.co', k: 'pk', p: 'a'.repeat(64), s: 'c2VjcmV0' };
+  const code = 'gym1:' + Buffer.from(JSON.stringify(o)).toString('base64url');
+  assert.strictEqual(J(run(`BK.decode(${J(code)})`)), J(o));
+  assert.strictEqual(run(`BK.decode('gym1:kaputt')`), null);
+  assert.strictEqual(run(`BK.decode('stracs1:abc')`), null);
 });
 console.log(`\n${ok} Tests bestanden`);
