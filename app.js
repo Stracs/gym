@@ -1,7 +1,7 @@
 'use strict';
 // Gym – Hannes' Trainings-App. Daten bleiben auf dem Gerät (localStorage + IndexedDB für Fotos).
 
-const VERSION = '1.5.0';
+const VERSION = '1.5.1';
 const KEY = 'gym.v1';
 const MUSCLES = ['Brust', 'Rücken', 'Schultern', 'Bizeps', 'Trizeps', 'Beine vorne', 'Beine hinten', 'Waden', 'Bauch'];
 const LEG_MUSCLES = ['Beine vorne', 'Beine hinten', 'Waden'];
@@ -56,6 +56,11 @@ if (!S.fix0511) {
 if (!S.fix0511b) {
   for (const d of S.plan) for (const it of d.items) { const m = /^(\d+)\s*×\s*\d+-\d+$/.exec(it[1] || ''); if (m && it[0] !== 'seitkabel') it[1] = `${m[1]} × 6-8`; }
   S.fix0511b = true;
+}
+// 05.11.2026 spät: Hannes macht bewusst 2 statt 3 Sätze pro Übung ("überall zwei statt drei Sätze")
+if (!S.fix0511c) {
+  for (const d of S.plan) for (const it of d.items) it[1] = (it[1] || '').replace(/^3\s*×/, '2 ×');
+  S.fix0511c = true;
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Speichern fehlgeschlagen!'); } }
 
