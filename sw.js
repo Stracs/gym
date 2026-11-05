@@ -1,6 +1,6 @@
 // Offline-Kopie der App. Version erhöhen, wenn sich Dateien ändern.
-const CACHE = 'gym-1.4.0';
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'lib/chart.umd.min.js', 'manifest.json', 'icon.svg', 'icon-180.png', 'icon-512.png'];
+const CACHE = 'gym-1.5.0';
+const FILES = ['./', 'index.html', 'style.css', 'app.js', 'woche.js', 'lib/chart.umd.min.js', 'manifest.json', 'icon.svg', 'icon-180.png', 'icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('gym-') && k !== CACHE).map(k => caches.delete(k))))); self.clients.claim(); });
 // Netz zuerst (immer neueste Version), offline aus dem Speicher

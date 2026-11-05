@@ -12,6 +12,7 @@ const ctx = {
   Chart: Object.assign(function () { return { destroy() {} }; }, { defaults: { plugins: { legend: { labels: {} } }, font: {} } }),
 };
 vm.createContext(ctx);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'woche.js'), 'utf8'), ctx);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8'), ctx);
 const run = code => vm.runInContext(code, ctx);
 const J = x => JSON.stringify(x);
@@ -78,5 +79,36 @@ t('Briefkasten: Kopplungscode lesen, kaputten ablehnen', () => {
   assert.strictEqual(run(`BK.connect(${J('https://stracs.github.io/gym/#bk=' + code)})`), true);
   assert.strictEqual(run(`BK.pair.p`), o.p);
   assert.strictEqual(run(`BK.connect('hallo')`), false);
+});
+t('Coach: echter Push vom 05.11. (müde, 4-5 h Schlaf, Monster, schwächer)', () => {
+  run(`S.sessions.push(mkSess('a', '2026-11-03', 'schwach', [['bank', [[60, 8], [60, 8], [60, 4]]], ['ueberkopf', [[45, 6], [40, 8]]]]))`);
+  run(`S.sessions.push(Object.assign(mkSess('b', '2026-11-05', 'push', [['bank', [[60, 6], [60, 6]]], ['ueberkopf', [[35, 5]]]]), { notes: 'Heute richtig tot null Kraft. Monster drinnen. Nur 4-5 Stunden Schlaf' }))`);
+  run(`S.sessions[1].entries.forEach(en => en.target = en.exId === 'bank' ? '3 × 6-8' : '3 × 10-12')`);
+  const c = run(`coachFeedback(S.sessions[1])`);
+  assert.strictEqual(c.down, 2, 'zwei Übungen schwächer');
+  assert.ok(c.errors.some(x => x.includes('Schlaf') && x.includes('5')), 'Schlaf 5 h erkannt');
+  assert.ok(c.errors.some(x => x.includes('Monster')), 'Koffein erkannt');
+  assert.ok(c.errors.some(x => x.includes('2 Tag')), 'kurze Pause seit Spaß & PR erkannt');
+  assert.ok(c.bad.some(x => x.includes('2/3')), 'fehlende Sätze erkannt');
+  assert.strictEqual(c.ask, null, 'Notiz ist klar genug, keine Rückfrage');
+});
+t('Coach: leere Notiz → Rückfrage, erste Einheit → kein Vergleich', () => {
+  run(`S.sessions.push(mkSess('a', '2026-11-05', 'push', [['bank', [[60, 8]]]]))`);
+  const c = run(`coachFeedback(S.sessions[0])`);
+  assert.ok(c.ask && c.ask.includes('Schlaf')); assert.strictEqual(c.enough, false);
+});
+t('Prognose: zu wenig Daten wird ehrlich gemeldet', () => {
+  run(`S.sessions.push(mkSess('a', today(), 'push', [['bank', [[60, 8], [60, 8], [60, 8]]]]))`);
+  const f = run(`forecast()`);
+  assert.ok(f.need.some(x => x.includes('3 Einheiten')));
+  assert.ok(f.ex1.some(x => x.name.startsWith('Bankdrücken') && x.kind === 'up'), 'Bank: alle Sätze oben → mehr Gewicht');
+});
+t('Woche: Ziele und Übungsvergleich', () => {
+  const mon = run(`ymd(mondayOf(new Date()))`);
+  run(`S.sessions.push(mkSess('a', addDays('${mon}', -7), 'push', [['bank', [[60, 6]]]]))`);
+  run(`S.sessions.push(mkSess('b', '${mon}', 'pull', [['bank', [[62.5, 6]]]]))`);
+  const w = run(`weekData('${mon}')`); const r = run(`weekExercises(weekData('${mon}'))`);
+  assert.strictEqual(w.ss.length, 1); assert.ok(r[0].pct > 3);
+  assert.strictEqual(run(`weekGoals(weekData('${mon}'))[0].ok`), false);
 });
 console.log(`\n${ok} Tests bestanden`);

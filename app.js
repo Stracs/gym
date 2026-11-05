@@ -1,7 +1,7 @@
 'use strict';
 // Gym – Hannes' Trainings-App. Daten bleiben auf dem Gerät (localStorage + IndexedDB für Fotos).
 
-const VERSION = '1.4.0';
+const VERSION = '1.5.0';
 const KEY = 'gym.v1';
 const MUSCLES = ['Brust', 'Rücken', 'Schultern', 'Bizeps', 'Trizeps', 'Beine vorne', 'Beine hinten', 'Waden', 'Bauch'];
 const LEG_MUSCLES = ['Beine vorne', 'Beine hinten', 'Waden'];
@@ -51,6 +51,11 @@ if (!S.fix0511) {
     if (!t4.items.some(i => i[0] === 'roller')) { const sk = t4.items.findIndex(i => i[0] === 'seitkh'); t4.items.splice(sk < 0 ? t4.items.length : sk, 0, ['roller', '3 × hoch + runter']); }
   }
   S.fix0511 = true;
+}
+// 05.11.2026 abends: Hannes trainiert 6 bis 8 Wdh, ab 8 mehr Gewicht, bei allen Übungen außer Seitheben am Kabel (seine Notiz vom Push 05.11.)
+if (!S.fix0511b) {
+  for (const d of S.plan) for (const it of d.items) { const m = /^(\d+)\s*×\s*\d+-\d+$/.exec(it[1] || ''); if (m && it[0] !== 'seitkabel') it[1] = `${m[1]} × 6-8`; }
+  S.fix0511b = true;
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Speichern fehlgeschlagen!'); } }
 
@@ -246,9 +251,9 @@ const charts = [];
 function go(t) { tab = t; document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t)); render(); scrollTo(0, 0); }
 function render() {
   charts.splice(0).forEach(c => c.destroy());
-  const titles = { heute: 'Heute', training: S.current ? (day(S.current.dayId)?.name || 'Training') : 'Training', verlauf: 'Verlauf', fortschritt: 'Fortschritt', mehr: 'Mehr' };
+  const titles = { heute: 'Heute', training: S.current ? (day(S.current.dayId)?.name || 'Training') : 'Training', verlauf: 'Verlauf', woche: 'Woche', fortschritt: 'Fortschritt', mehr: 'Mehr' };
   $('#title').textContent = titles[tab]; tickClock();
-  ({ heute: vHeute, training: vTraining, verlauf: vVerlauf, fortschritt: vFortschritt, mehr: vMehr })[tab]();
+  ({ heute: vHeute, training: vTraining, verlauf: vVerlauf, woche: vWoche, fortschritt: vFortschritt, mehr: vMehr })[tab]();
 }
 
 // ---------- Heute ----------
@@ -281,15 +286,18 @@ function vHeute() {
   h += `<div class="card"><h2>⚔️ Quest: ${bf.goal} kg Bankdrücken</h2><div class="row between"><span class="big">${bf.cur ? fmtNum(bf.cur) : '–'} kg</span><span class="mute">geschätztes 1RM</span></div>
     <div class="bar" style="margin:8px 0"><i style="width:${pct}%"></i></div>
     <div class="mute">${bf.done ? '🏆 Geschafft!' : bf.eta ? `Prognose bei deinem Tempo: <b style="color:var(--acc2)">${bf.eta.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}</b>` : 'Prognose ab 3 Bank-Einheiten.'}${bf.cur ? ` · noch ${fmtNum(Math.max(0, bf.goal - bf.cur))} kg` : ''}</div></div>`;
-  // Wochen-Zeugnis (letzte Woche)
+  // Wochen-Zeugnis (letzte Woche) + Trend
   h += reportCard();
+  h += trendCard();
+  const lastS = sorted().filter(x => !x.demo).pop();
+  if (lastS && daysBetween(lastS.date, t) <= 3) h += `<div class="card"><div class="row between"><h2>🧠 Rückmeldung zum letzten Training</h2><button class="btn-sm" data-act="coach" data-v="${lastS.id}">Öffnen</button></div><div class="mute">${esc(day(lastS.dayId)?.name || 'Frei')} · ${fmtDate(lastS.date)}${(() => { const c = coachFeedback(lastS); return c.down ? ` · ${c.down} Übung(en) schwächer` : c.up ? ` · ${c.up} Übung(en) stärker` : ''; })()}</div></div>`;
   if (S.sessions.length) h += `<div class="card"><h2>🧍 Diese Woche trainiert</h2>${bodyMap()}</div>
     <div class="card"><h2>🔋 Erholung</h2><div class="grid3">${recovery().map(r => `<div class="stat" style="text-align:left;padding:8px"><span style="color:var(--text);font-size:13px"><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${r.c}"></i> ${esc(r.k)}</span><br><span>${r.d === null ? r.t : r.d === 0 ? 'heute' : `vor ${r.d} T. · ${r.t}`}</span></div>`).join('')}</div>
     <div class="mute" style="margin-top:8px">Faustregel: denselben Muskel nach ca. 48 h wieder hart trainieren.</div></div>`;
   if (S.sessions.length >= 2) h += `<div class="card"><h2>🎯 Schwächster Muskel (14 Tage)</h2><h3>${esc(weak[0].k)}</h3><div class="mute">${Math.round(weak[0].pct * 100)} % vom Ziel · danach: ${esc(weak[1].k)} (${Math.round(weak[1].pct * 100)} %), ${esc(weak[2].k)} (${Math.round(weak[2].pct * 100)} %)</div>
     ${S.current ? '' : `<br><button class="btn btn-full" data-act="start" data-v="smart">🧠 Smart-Schwächen-Tag starten</button><div class="mute" style="margin-top:6px">Baut eine Bonus-Einheit aus genau diesen 3 Muskeln, statt Spaß & PR.</div>`}</div>`;
   if (!S.sessions.length) h += `<div class="card empty">Noch keine Einheit. Starte oben dein erstes Training.<br>Dein Plan (Push / Pull / Beine / Spaß & PR) ist schon drin.</div>`;
-  $('#view').innerHTML = h;
+  $('#view').innerHTML = h; drawTrend();
 }
 function reportCard() {
   const lw = mondayOf(new Date()); lw.setDate(lw.getDate() - 7); const k = ymd(lw); const pk = addDays(k, -7);
@@ -393,7 +401,7 @@ function finishSession() {
   BK.queue({ t: 'training', id: c.id });
   const v = volume(c);
   toast(`💪 Gespeichert: ${c.durationMin} min · ${fmtNum(v)} kg Volumen${c.prs ? ` · ${c.prs} Rekord${c.prs > 1 ? 'e' : ''}` : ''}`, 4000);
-  go('heute');
+  go('heute'); setTimeout(() => coachDialog(c.id), 300);
 }
 
 // Pausen-Timer
@@ -451,6 +459,7 @@ function sessionDialog(id) {
   let h = `<h3>${esc(day(s.dayId)?.name || 'Frei')} · ${fmtDate(s.date)}</h3><div class="mute">${s.durationMin || '?'} min · ${fmtNum(volume(s))} kg Volumen</div><hr>`;
   for (const en of s.entries) h += `<div style="margin-bottom:8px"><b>${esc(ex(en.exId).name)}</b><div class="mute">${en.sets.map(st => `${st.warm ? '(A) ' : ''}${fmtNum(st.w || 0)}×${st.r}${st.pr ? '🏆' : ''}`).join(' · ')}</div></div>`;
   if (s.notes) h += `<hr><div>📝 ${esc(s.notes)}</div>`;
+  h += `<br><button class="btn btn-full" data-act="coach" data-v="${s.id}">🧠 Rückmeldung zu diesem Training</button>`;
   h += `<hr><div class="row between"><button class="btn-sm btn-bad" data-act="delsess" data-v="${s.id}">Löschen</button><button class="btn-sm" data-act="editsess" data-v="${s.id}">Bearbeiten</button><button class="btn-sm btn-acc" data-act="close">Schließen</button></div>`;
   openDlg(h);
 }
@@ -772,6 +781,9 @@ document.addEventListener('click', async ev => {
     case 'plan': { const [d, id] = v.split('|'); if (id) S.weekPlan[d] = id; else delete S.weekPlan[d]; save(); closeDlg(); render(); break; }
     case 'startat': { const [id, d] = v.split('|'); closeDlg(); startSession(id, d); break; }
     case 'sess': sessionDialog(v); break;
+    case 'coach': coachDialog(v); break;
+    case 'wk': weekOff = Math.min(0, weekOff + +v); render(); break;
+    case 'coachnote': { const s = S.sessions.find(x => x.id === v); const a = prompt('Antwort (z. B. 7 h Schlaf, Energie 3, keine Schmerzen):'); if (s && a) { s.notes = (s.notes ? s.notes + ' ' : '') + a.trim(); save(); BK.queue({ t: 'training', id: s.id }); coachDialog(v); } break; }
     case 'delsess': if (confirm('Diese Einheit löschen?')) { S.sessions = S.sessions.filter(s => s.id !== v); recomputePRs(); save(); closeDlg(); render(); } break;
     case 'editsess': { if (S.current) { toast('Erst laufendes Training beenden'); break; } const s = S.sessions.find(x => x.id === v); S.sessions = S.sessions.filter(x => x.id !== v);
       s.entries.forEach(en => en.sets.forEach(st => st.done = true)); s.edit = true; S.current = s; save(); closeDlg(); go('training'); break; }
