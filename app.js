@@ -1,7 +1,7 @@
 'use strict';
 // Gym – Hannes' Trainings-App. Daten bleiben auf dem Gerät (localStorage + IndexedDB für Fotos).
 
-const VERSION = '1.3.1';
+const VERSION = '1.4.0';
 const KEY = 'gym.v1';
 const MUSCLES = ['Brust', 'Rücken', 'Schultern', 'Bizeps', 'Trizeps', 'Beine vorne', 'Beine hinten', 'Waden', 'Bauch'];
 const LEG_MUSCLES = ['Beine vorne', 'Beine hinten', 'Waden'];
@@ -22,6 +22,7 @@ const DEFAULT_EX = [
   ['klimmzug', 'Klimmzüge', 'Rücken'], ['kniebeuge', 'Kniebeuge', 'Beine vorne'], ['adduktor', 'Adduktoren', 'Beine hinten'],
   ['rueckenstr', 'Rückenstrecker', 'Rücken'], ['bizcurl', 'Bizeps Curls', 'Bizeps'], ['wrist', 'Wrist Curls (Unterarme)', 'Bizeps'],
   ['beugerkabel', 'Beinbeuger am Kabelturm', 'Beine hinten'], ['kreuzheben', 'Kreuzheben', 'Beine hinten'], ['dips', 'Dips', 'Trizeps'],
+  ['roller', 'Unterarm-Roller (Band + Scheibe)', 'Bizeps'],
 ].map(([id, name, muscle]) => ({ id, name, muscle }));
 
 const DEFAULT_PLAN = [
@@ -29,7 +30,7 @@ const DEFAULT_PLAN = [
   { id: 'pull', name: 'Pull', icon: '🪝', core: true, items: [['latzug', '3 × 8-10'], ['tbar', '3 × 8-10'], ['rudereng', '3 × 10-12'], ['revfly', '3 × 12-15'], ['hammer', '3 × 10-12'], ['spider', '3 × 10-12'], ['beinheben', '3 × max']] },
   { id: 'beine', name: 'Beine', icon: '🦵', core: true, items: [['presse', '3 × 8-10'], ['rdl', '3 × 8-10'], ['beugerkabel', '3 × 10-12'], ['strecker', '3 × 12-15'], ['waden', '3 × 12-15'], ['crunch', '3 × 12-15']] },
   // Tag 4 (ab 03.11.): Spaß- und PR-Tag. id bleibt 'schwach', damit alte Daten passen.
-  { id: 'schwach', name: 'Spaß & PR', icon: '🏆', core: false, items: [['bank', '1 × 3-5 (Top-Satz)'], ['klimmzug', '4 × max'], ['dips', '3 × 8-12'], ['seitkh', '3 × 12-15']] },
+  { id: 'schwach', name: 'Spaß & PR', icon: '🏆', core: false, items: [['bank', '1 × 3-5 (Top-Satz)'], ['kreuzheben', '1 × 3-5 (Top-Satz)'], ['klimmzug', '4 × max'], ['dips', '3 × 8-12'], ['roller', '3 × hoch + runter'], ['seitkh', '3 × 12-15']] },
 ];
 
 // ---------- Speicher ----------
@@ -41,6 +42,16 @@ let S;
 try { S = JSON.parse(localStorage.getItem(KEY)) || freshState(); } catch (e) { S = freshState(); }
 // fehlende Felder nach Updates ergänzen
 S = Object.assign(freshState(), S); S.settings = Object.assign(freshState().settings, S.settings);
+// 05.11.2026: Spaß & PR bekommt Kreuzheben + Unterarm-Roller (einmalig, Trainingsdaten bleiben)
+if (!S.fix0511) {
+  if (!S.exercises.some(e => e.id === 'roller')) S.exercises.push({ id: 'roller', name: 'Unterarm-Roller (Band + Scheibe)', muscle: 'Bizeps' });
+  const t4 = S.plan.find(d => d.id === 'schwach');
+  if (t4) {
+    if (!t4.items.some(i => i[0] === 'kreuzheben')) { const b = t4.items.findIndex(i => i[0] === 'bank'); t4.items.splice(b + 1, 0, ['kreuzheben', '1 × 3-5 (Top-Satz)']); }
+    if (!t4.items.some(i => i[0] === 'roller')) { const sk = t4.items.findIndex(i => i[0] === 'seitkh'); t4.items.splice(sk < 0 ? t4.items.length : sk, 0, ['roller', '3 × hoch + runter']); }
+  }
+  S.fix0511 = true;
+}
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Speichern fehlgeschlagen!'); } }
 
 // Fotos in IndexedDB
