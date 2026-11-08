@@ -1,7 +1,7 @@
 'use strict';
 // Gym – Hannes' Trainings-App. Daten bleiben auf dem Gerät (localStorage + IndexedDB für Fotos).
 
-const VERSION = '1.5.1';
+const VERSION = '2.0.0';
 const KEY = 'gym.v1';
 const MUSCLES = ['Brust', 'Rücken', 'Schultern', 'Bizeps', 'Trizeps', 'Beine vorne', 'Beine hinten', 'Waden', 'Bauch'];
 const LEG_MUSCLES = ['Beine vorne', 'Beine hinten', 'Waden'];
@@ -296,7 +296,7 @@ function vHeute() {
   h += trendCard();
   const lastS = sorted().filter(x => !x.demo).pop();
   if (lastS && daysBetween(lastS.date, t) <= 3) h += `<div class="card"><div class="row between"><h2>🧠 Rückmeldung zum letzten Training</h2><button class="btn-sm" data-act="coach" data-v="${lastS.id}">Öffnen</button></div><div class="mute">${esc(day(lastS.dayId)?.name || 'Frei')} · ${fmtDate(lastS.date)}${(() => { const c = coachFeedback(lastS); return c.down ? ` · ${c.down} Übung(en) schwächer` : c.up ? ` · ${c.up} Übung(en) stärker` : ''; })()}</div></div>`;
-  if (S.sessions.length) h += `<div class="card"><h2>🧍 Diese Woche trainiert</h2>${bodyMap()}</div>
+  if (S.sessions.length) h += `<div class="card mapcard"><h2>Muskelkarte</h2>${bodyMap()}</div>
     <div class="card"><h2>🔋 Erholung</h2><div class="grid3">${recovery().map(r => `<div class="stat" style="text-align:left;padding:8px"><span style="color:var(--text);font-size:13px"><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${r.c}"></i> ${esc(r.k)}</span><br><span>${r.d === null ? r.t : r.d === 0 ? 'heute' : `vor ${r.d} T. · ${r.t}`}</span></div>`).join('')}</div>
     <div class="mute" style="margin-top:8px">Faustregel: denselben Muskel nach ca. 48 h wieder hart trainieren.</div></div>`;
   if (S.sessions.length >= 2) h += `<div class="card"><h2>🎯 Schwächster Muskel (14 Tage)</h2><h3>${esc(weak[0].k)}</h3><div class="mute">${Math.round(weak[0].pct * 100)} % vom Ziel · danach: ${esc(weak[1].k)} (${Math.round(weak[1].pct * 100)} %), ${esc(weak[2].k)} (${Math.round(weak[2].pct * 100)} %)</div>
@@ -469,41 +469,64 @@ function sessionDialog(id) {
   openDlg(h);
 }
 
-// Erholung: Tage seit dem letzten harten Satz je Muskel
+// Erholung: Tage seit dem letzten harten Satz je Muskel (Farben = Scheibenfarben)
 function recovery() {
   const last = {}; for (const s of S.sessions) for (const st of workSets(s)) { const k = ex(st.exId).muscle; if (!last[k] || s.date > last[k]) last[k] = s.date; }
   return MUSCLES.map(k => { const d = last[k] ? daysBetween(last[k], today()) : null;
-    const [c, t] = d === null ? ['#2a2f3a', 'noch nie'] : d === 0 ? ['#ff4d5e', 'heute'] : d === 1 ? ['#f5d142', 'erholt sich'] : d <= 7 ? ['#3ccf7a', 'bereit'] : ['#8b93a3', 'lange her'];
+    const [c, t] = d === null ? ['#3a3631', 'noch nie'] : d === 0 ? ['#e5352c', 'heute'] : d === 1 ? ['#f5c400', 'erholt sich'] : d <= 7 ? ['#2fae5f', 'bereit'] : ['#2c74e0', 'lange her'];
     return { k, d, c, t }; });
 }
-// Muskel-Karte: Körper vorn + hinten, Farbe = % vom Wochenziel (letzte 7 Tage)
-function bodyMap(days = 7) {
-  const m = muscleSets(addDays(today(), -days + 1), today());
-  const pct = k => m[k] / (WEEK_TARGET[k] * days / 7);
-  const col = k => { const p = pct(k); if (!p) return '#2a2f3a'; if (p < .34) return '#6b3a12'; if (p < .67) return '#b0581a'; if (p < 1) return '#ff7a1a'; return '#ffb066'; };
-  const sk = '#3a404c';
-  const fig = (x, front) => `<g transform="translate(${x},0)">
-    <circle cx="60" cy="22" r="15" fill="${sk}"/><rect x="52" y="36" width="16" height="10" fill="${sk}"/>
-    <ellipse cx="28" cy="58" rx="14" ry="11" fill="${col('Schultern')}"/><ellipse cx="92" cy="58" rx="14" ry="11" fill="${col('Schultern')}"/>
-    ${front ? `<rect x="40" y="50" width="19" height="26" rx="7" fill="${col('Brust')}"/><rect x="61" y="50" width="19" height="26" rx="7" fill="${col('Brust')}"/>
-      <rect x="45" y="80" width="30" height="40" rx="8" fill="${col('Bauch')}"/>
-      <rect x="15" y="70" width="13" height="30" rx="6" fill="${col('Bizeps')}"/><rect x="92" y="70" width="13" height="30" rx="6" fill="${col('Bizeps')}"/>
-      <rect x="40" y="126" width="18" height="52" rx="8" fill="${col('Beine vorne')}"/><rect x="62" y="126" width="18" height="52" rx="8" fill="${col('Beine vorne')}"/>`
-    : `<path d="M40 50 h40 l-6 62 h-28 z" fill="${col('Rücken')}"/>
-      <rect x="15" y="70" width="13" height="30" rx="6" fill="${col('Trizeps')}"/><rect x="92" y="70" width="13" height="30" rx="6" fill="${col('Trizeps')}"/>
-      <rect x="44" y="112" width="32" height="16" rx="7" fill="${col('Beine hinten')}"/>
-      <rect x="40" y="130" width="18" height="48" rx="8" fill="${col('Beine hinten')}"/><rect x="62" y="130" width="18" height="48" rx="8" fill="${col('Beine hinten')}"/>`}
-    <rect x="14" y="102" width="11" height="34" rx="5" fill="${sk}"/><rect x="95" y="102" width="11" height="34" rx="5" fill="${sk}"/>
-    <rect x="42" y="182" width="14" height="38" rx="6" fill="${front ? sk : col('Waden')}"/><rect x="64" y="182" width="14" height="38" rx="6" fill="${front ? sk : col('Waden')}"/>
-    <text x="60" y="240" text-anchor="middle" fill="#8b93a3" font-size="12">${front ? 'vorn' : 'hinten'}</text></g>`;
-  return `<svg viewBox="0 0 280 250" style="width:100%;max-width:360px;display:block;margin:0 auto">${fig(10, true)}${fig(150, false)}</svg>
-    <div class="row wrap" style="justify-content:center;gap:10px;font-size:12px;color:var(--mute);margin-top:6px">
-    ${[['#2a2f3a', '0'], ['#6b3a12', '< 1/3'], ['#b0581a', '< 2/3'], ['#ff7a1a', 'fast'], ['#ffb066', 'Ziel ✓']].map(([c, l]) => `<span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${c}"></i> ${l}</span>`).join('')}</div>`;
+// Muskelkarte (2.0, nach openGym): Körper vorn + hinten, drei Ansichten
+//   vol  = Sätze im Zeitraum in % vom Ziel · rec = Erholung · miss = was gar nicht drankam
+let mapMode = 'vol', mapDays = 7;
+function mapData() {
+  const t = today(); const all = sorted();
+  const days = mapDays || (all.length ? daysBetween(all[0].date, t) + 1 : 7);
+  const m = muscleSets(addDays(t, -days + 1), t); const rec = recovery();
+  const goal = k => WEEK_TARGET[k] * days / 7;
+  const VOL = ['#3a3631', '#5b4c12', '#9c7f05', '#f5c400', '#ffe680'];
+  const info = {};
+  for (const k of MUSCLES) { const p = m[k] / goal(k); const r = rec.find(x => x.k === k);
+    const fill = mapMode === 'rec' ? r.c : mapMode === 'miss' ? (m[k] ? '#2f3b31' : '#e5352c')
+      : !m[k] ? VOL[0] : p < .34 ? VOL[1] : p < .67 ? VOL[2] : p < 1 ? VOL[3] : VOL[4];
+    info[k] = { fill, sets: m[k], goal: Math.round(goal(k)), pct: Math.round(p * 100), rec: r }; }
+  const legend = mapMode === 'rec' ? [['#e5352c', 'heute belastet'], ['#f5c400', 'erholt sich'], ['#2fae5f', 'bereit'], ['#2c74e0', 'lange her'], ['#3a3631', 'noch nie']]
+    : mapMode === 'miss' ? [['#e5352c', 'gar nicht trainiert'], ['#2f3b31', 'trainiert']]
+    : [[VOL[0], '0'], [VOL[1], '< 1/3'], [VOL[2], '< 2/3'], [VOL[3], 'fast'], [VOL[4], 'Ziel ✓']];
+  const missing = MUSCLES.filter(k => !m[k]);
+  return { info, legend, missing, days };
+}
+function bodyMap() { return `<div id="bodymap">${bodyMapInner()}</div>`; }
+function bodyMapInner() {
+  const { info, legend, missing } = mapData();
+  const M = (k, d) => `<path class="m" d="${d}" fill="${info[k].fill}" data-act="muscle" data-v="${k}"/>`;
+  const SK = d => `<path class="sk" d="${d}"/>`;
+  // linke Körperhälfte, wird gespiegelt (Mitte x = 60)
+  const arm = (k) => M(k, 'M23 68 Q17 84 20 99 Q27 102 31 96 Q33 81 29 68 Z') + SK('M19 102 Q14 118 15 133 L22 134 Q28 118 30 101 Z') + SK('M13 136 a5 6 0 1 0 10 0 a5 6 0 1 0 -10 0');
+  const halfF = M('Schultern', 'M38 44 Q25 44 21 58 Q21 66 26 68 Q30 56 42 50 Z') + M('Brust', 'M43 47 Q57 45 59 50 L59 70 Q48 75 37 68 Q33 57 43 47 Z')
+    + SK('M38 72 Q44 76 47 76 L47 118 Q41 112 39 100 Z') + [74, 88, 102].map(y => M('Bauch', `M48 ${y} h10 v12 h-10 Z`)).join('')
+    + arm('Bizeps') + M('Beine vorne', 'M45 134 Q35 160 39 193 L52 195 Q58 166 58.5 138 Z') + SK('M40 199 Q37 220 42 240 L50 240 Q54 220 51 199 Z');
+  const halfB = M('Schultern', 'M38 44 Q25 44 21 58 Q21 66 26 68 Q30 56 42 50 Z') + M('Rücken', 'M40 50 Q33 72 44 101 L59 104 L59 58 Z')
+    + arm('Trizeps') + M('Beine hinten', 'M45 118 Q39 131 45 141 Q55 144 59 135 L59 118 Z') + M('Beine hinten', 'M44 145 Q37 167 41 193 L52 195 Q57 170 58 147 Z')
+    + M('Waden', 'M41 199 Q35 215 42 234 L50 234 Q56 215 51 199 Z');
+  const head = SK('M47 20 a13 15 0 1 0 26 0 a13 15 0 1 0 -26 0') + SK('M53 33 L67 33 L69 43 L51 43 Z');
+  const fig = (x, front) => `<g transform="translate(${x},0)">${head}${front ? '' : M('Rücken', 'M48 35 L72 35 L82 47 L60 57 L38 47 Z') + M('Rücken', 'M50 104 h20 v12 h-20 Z')}
+    <g>${front ? halfF : halfB}</g><g transform="matrix(-1 0 0 1 120 0)">${front ? halfF : halfB}</g>
+    ${front ? M('Bauch', 'M49 116 L71 116 L66 132 L54 132 Z') : ''}
+    <text x="60" y="256" text-anchor="middle" fill="#9d968a" font-size="10" font-family="Unbounded, sans-serif" letter-spacing="1.5">${front ? 'VORN' : 'HINTEN'}</text></g>`;
+  const seg = (act, cur, opts, cls = '') => `<div class="seg ${cls}">${opts.map(([v, l]) => `<button class="${String(cur) === String(v) ? 'on' : ''}" data-act="${act}" data-v="${v}">${l}</button>`).join('')}</div>`;
+  const note = mapMode === 'miss' ? (missing.length ? `Nicht drangekommen: <b style="color:var(--text)">${missing.map(esc).join(', ')}</b>` : '✅ Alle Muskeln waren dran.')
+    : mapMode === 'rec' ? 'Faustregel: denselben Muskel nach ca. 48 h wieder hart trainieren.' : 'Sätze im Zeitraum im Verhältnis zu deinem Wochenziel.';
+  return seg('mapmode', mapMode, [['vol', '🔥 Volumen'], ['rec', '🔋 Erholung'], ['miss', '🚫 Lücken']])
+    + (mapMode === 'rec' ? '' : seg('mapdays', mapDays, [[7, 'Woche'], [30, 'Monat'], [0, 'Alles']], 'small'))
+    + `<svg class="bodymap" viewBox="0 0 280 262">${fig(10, true)}${fig(150, false)}</svg>
+    <div class="legend">${legend.map(([c, l]) => `<span><i style="background:${c}"></i>${l}</span>`).join('')}</div>
+    <div class="mute mapnote">${note} · Muskel antippen = Details</div>`;
 }
 
 // ---------- Fortschritt (Diagramme) ----------
 let progEx = null;
-Chart.defaults.color = '#8b93a3'; Chart.defaults.borderColor = '#2a2f3a'; Chart.defaults.font.family = 'system-ui, sans-serif';
+Chart.defaults.color = '#9d968a'; Chart.defaults.borderColor = '#34312c'; Chart.defaults.font.family = "'Familjen Grotesk', system-ui, sans-serif";
 Chart.defaults.plugins.legend.labels.boxWidth = 12; Chart.defaults.maintainAspectRatio = false;
 function mk(id, cfg) { const el = document.getElementById(id); if (el) charts.push(new Chart(el, cfg)); }
 function weeksBack(n) { const out = []; const w = mondayOf(new Date()); w.setDate(w.getDate() - 7 * (n - 1)); for (let i = 0; i < n; i++) { out.push(ymd(w)); w.setDate(w.getDate() + 7); } return out; }
@@ -518,7 +541,7 @@ function vFortschritt() {
     <div class="stat"><b>${all.length}</b><span>Einheiten seit ${fmtDate(first)}</span></div>
     <div class="stat"><b>${fmtNum(totV / 1000)} t</b><span>bewegtes Gewicht</span></div>
     <div class="stat"><b>${totPR}</b><span>Rekorde</span></div></div>
-  <div class="card"><h2>🧍 Muskel-Karte · letzte 7 Tage</h2>${bodyMap()}</div>
+  <div class="card mapcard"><h2>Muskelkarte</h2>${bodyMap()}</div>
   <div class="card"><h2>Overall · Kraft-Index pro Woche</h2><div class="chartbox tall"><canvas id="c-overall"></canvas></div><div class="mute">Linie = Ø deiner besten 1RMs in % vom Start (alle Übungen). Balken = Volumen pro Woche.</div></div>
   <div class="card"><h2>Einheiten pro Woche</h2><div class="chartbox"><canvas id="c-freq"></canvas></div></div>
   <div class="card"><h2>🎯 Schwächen-Radar · letzte 14 Tage</h2><div class="chartbox tall"><canvas id="c-radar"></canvas></div><div class="mute">Sätze pro Muskel im Verhältnis zum Ziel. Was nach innen knickt, kommt zu kurz.</div></div>
@@ -531,7 +554,7 @@ function vFortschritt() {
   <div class="card"><h2>Dauer pro Einheit</h2><div class="chartbox"><canvas id="c-dur"></canvas></div></div>
   <div class="card"><h2>📸 Vorher / Nachher</h2><div id="cmp" class="mute">Lade Fotos …</div></div>`;
   $('#view').innerHTML = h;
-  const ACC = '#ff7a1a', ACC2 = '#ffb066', OK = '#3ccf7a', BLUE = '#4da3ff';
+  const ACC = '#f5c400', ACC2 = '#ffdf6b', OK = '#2fae5f', BLUE = '#2c74e0';
   // Overall
   const wks = weeksBack(Math.min(26, Math.max(8, Math.ceil(daysBetween(first, today()) / 7) + 1)));
   const lbl = wks.map(w => fmtDate(w).slice(4));
@@ -541,19 +564,19 @@ function vFortschritt() {
     return vals.length ? vals.reduce((a, b) => a + b) / vals.length : null; });
   mk('c-overall', { data: { labels: lbl, datasets: [
     { type: 'line', label: 'Kraft-Index %', data: idx, borderColor: ACC, backgroundColor: ACC, tension: .35, yAxisID: 'y', spanGaps: true, pointRadius: 3 },
-    { type: 'bar', label: 'Volumen (t)', data: vol, backgroundColor: 'rgba(77,163,255,.35)', yAxisID: 'y2', borderRadius: 4 }] },
+    { type: 'bar', label: 'Volumen (t)', data: vol, backgroundColor: 'rgba(44,116,224,.5)', yAxisID: 'y2', borderRadius: 4 }] },
     options: { scales: { y: { position: 'left', suggestedMin: 95 }, y2: { position: 'right', grid: { display: false } } } } });
   // Frequenz
   const freq = wks.map(w => S.sessions.filter(s => weekKey(s.date) === w).length);
   mk('c-freq', { type: 'bar', data: { labels: lbl, datasets: [{ label: 'Einheiten', data: freq, backgroundColor: freq.map(f => f >= S.settings.weekGoal ? OK : ACC), borderRadius: 5 },
-    { type: 'line', label: `Ziel ${S.settings.weekGoal}`, data: wks.map(() => S.settings.weekGoal), borderColor: '#8b93a3', borderDash: [5, 5], pointRadius: 0 }] },
+    { type: 'line', label: `Ziel ${S.settings.weekGoal}`, data: wks.map(() => S.settings.weekGoal), borderColor: '#9d968a', borderDash: [5, 5], pointRadius: 0 }] },
     options: { scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } } });
   // Radar
   const m14 = muscleSets(addDays(today(), -13), today());
   mk('c-radar', { type: 'radar', data: { labels: MUSCLES, datasets: [
-    { label: 'Du (% vom Ziel)', data: MUSCLES.map(k => Math.round(m14[k] / (WEEK_TARGET[k] * 2) * 100)), borderColor: ACC, backgroundColor: 'rgba(255,122,26,.25)' },
-    { label: 'Ziel 100 %', data: MUSCLES.map(() => 100), borderColor: '#8b93a3', borderDash: [4, 4], backgroundColor: 'transparent', pointRadius: 0 }] },
-    options: { scales: { r: { beginAtZero: true, suggestedMax: 120, grid: { color: '#2a2f3a' }, angleLines: { color: '#2a2f3a' }, pointLabels: { color: '#eef0f4', font: { size: 11 } }, ticks: { display: false } } } } });
+    { label: 'Du (% vom Ziel)', data: MUSCLES.map(k => Math.round(m14[k] / (WEEK_TARGET[k] * 2) * 100)), borderColor: ACC, backgroundColor: 'rgba(245,196,0,.22)' },
+    { label: 'Ziel 100 %', data: MUSCLES.map(() => 100), borderColor: '#9d968a', borderDash: [4, 4], backgroundColor: 'transparent', pointRadius: 0 }] },
+    options: { scales: { r: { beginAtZero: true, suggestedMax: 120, grid: { color: '#34312c' }, angleLines: { color: '#34312c' }, pointLabels: { color: '#f4f0e6', font: { size: 11 } }, ticks: { display: false } } } } });
   drawExChart();
   // Bank
   const bs = e1rmSeries(S.settings.benchEx); const bf = benchForecast();
@@ -565,18 +588,18 @@ function vFortschritt() {
     { label: 'Prognose', data: fcD, borderColor: ACC2, borderDash: [6, 4], pointRadius: 0, spanGaps: true },
     { label: `Ziel ${bf.goal} kg`, data: fcL.map(() => bf.goal), borderColor: OK, pointRadius: 0, borderDash: [2, 3] }] } });
   // Muskeln gestapelt
-  const cols = ['#ff7a1a', '#4da3ff', '#ffb066', '#3ccf7a', '#c77dff', '#ff4d5e', '#f5d142', '#5ee6d0', '#9aa3b5'];
+  const cols = ['#f5c400', '#2c74e0', '#ffdf6b', '#2fae5f', '#c77dff', '#e5352c', '#f5d142', '#5ee6d0', '#9aa3b5'];
   mk('c-muscle', { type: 'bar', data: { labels: lbl, datasets: MUSCLES.map((k, i) => ({ label: k, backgroundColor: cols[i],
     data: wks.map(w => muscleSets(w, addDays(w, 6))[k]) })) }, options: { scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } } });
   // Körpergewicht
   const bw = [...S.bodyweight].sort((a, b) => a.date.localeCompare(b.date));
   const hasM = k => bw.some(p => p[k]);
   mk('c-bw', { type: 'line', data: { labels: bw.map(p => fmtDate(p.date).slice(4)), datasets: [{ label: 'Gewicht kg', data: bw.map(p => p.kg), borderColor: BLUE, backgroundColor: BLUE, tension: .3, spanGaps: true, yAxisID: 'y' },
-    ...[['waist', 'Taille cm', '#ff4d5e'], ['arm', 'Arm cm', ACC], ['chest', 'Brust cm', OK]].filter(([k]) => hasM(k)).map(([k, l, c]) => ({ label: l, data: bw.map(p => p[k]), borderColor: c, backgroundColor: c, tension: .3, spanGaps: true, yAxisID: 'y2' }))] },
+    ...[['waist', 'Taille cm', '#e5352c'], ['arm', 'Arm cm', ACC], ['chest', 'Brust cm', OK]].filter(([k]) => hasM(k)).map(([k, l, c]) => ({ label: l, data: bw.map(p => p[k]), borderColor: c, backgroundColor: c, tension: .3, spanGaps: true, yAxisID: 'y2' }))] },
     options: { scales: { y: { position: 'left' }, y2: { position: 'right', display: ['waist', 'arm', 'chest'].some(hasM), grid: { display: false } } } } });
   // Dauer
   mk('c-dur', { type: 'bar', data: { labels: all.slice(-20).map(s => fmtDate(s.date).slice(4)), datasets: [{ label: 'Minuten', data: all.slice(-20).map(s => s.durationMin || 0),
-    backgroundColor: all.slice(-20).map(s => (s.durationMin || 0) > 75 ? '#ff4d5e' : ACC), borderRadius: 4 }] }, options: { scales: { y: { beginAtZero: true } } } });
+    backgroundColor: all.slice(-20).map(s => (s.durationMin || 0) > 75 ? '#e5352c' : ACC), borderRadius: 4 }] }, options: { scales: { y: { beginAtZero: true } } } });
   compareView();
 }
 function prTable() {
@@ -591,8 +614,8 @@ function drawExChart() {
   const old = charts.findIndex(c => c.canvas.id === 'c-ex'); if (old >= 0) charts.splice(old, 1)[0].destroy();
   const s = e1rmSeries(progEx);
   mk('c-ex', { type: 'line', data: { labels: s.map(p => fmtDate(p.date).slice(4)), datasets: [
-    { label: '1RM geschätzt', data: s.map(p => Math.round(p.e * 10) / 10), borderColor: '#ff7a1a', backgroundColor: '#ff7a1a', tension: .3 },
-    { label: 'Schwerstes Gewicht', data: s.map(p => p.w), borderColor: '#4da3ff', backgroundColor: '#4da3ff', tension: .3 }] } });
+    { label: '1RM geschätzt', data: s.map(p => Math.round(p.e * 10) / 10), borderColor: '#f5c400', backgroundColor: '#f5c400', tension: .3 },
+    { label: 'Schwerstes Gewicht', data: s.map(p => p.w), borderColor: '#2c74e0', backgroundColor: '#2c74e0', tension: .3 }] } });
   const b = bests(progEx); const el = $('#exstats');
   const hist = sorted().reverse().map(x => ({ x, en: x.entries.find(en => en.exId === progEx) })).filter(o => o.en && o.en.sets.some(st => st.done)).slice(0, 12);
   if (el) el.innerHTML = s.length ? `Bestes 1RM <b>${fmtNum(b.e)} kg</b> · schwerstes <b>${fmtNum(b.w)} kg</b> · ${s.length} ${s.length === 1 ? 'Einheit' : 'Einheiten'} · seit Start <b>${s.length > 1 ? (b.e >= s[0].e ? '+' : '') + Math.round((b.e / s[0].e - 1) * 100) + ' %' : '–'}</b>
@@ -618,37 +641,37 @@ async function progressCard() {
   let ps = []; try { ps = (await DB.all()).sort((a, b) => a.date.localeCompare(b.date)); } catch (e) {}
   const pics = ps.length >= 2 ? [ps[0], ps[ps.length - 1]] : ps.slice(-1);
   const W = 1080, H = pics.length ? 2050 : 1350, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
-  const grd = g.createLinearGradient(0, 0, W, H); grd.addColorStop(0, '#1d1209'); grd.addColorStop(1, '#0f1115'); g.fillStyle = grd; g.fillRect(0, 0, W, H);
+  const grd = g.createLinearGradient(0, 0, W, H); grd.addColorStop(0, '#2b2410'); grd.addColorStop(1, '#11100f'); g.fillStyle = grd; g.fillRect(0, 0, W, H);
   const all = sorted(); const first = all[0].date; const si = strengthIndex(); const bf = benchForecast();
   const totV = all.reduce((a, s) => a + volume(s), 0), prs = all.reduce((a, s) => a + (s.prs || 0), 0);
-  g.fillStyle = '#ff7a1a'; g.font = '700 44px system-ui, sans-serif'; g.fillText('GYM · FORTSCHRITT', 70, 110);
-  g.fillStyle = '#8b93a3'; g.font = '34px system-ui, sans-serif'; g.fillText(`${fmtDate(first)} bis ${fmtDate(today())} · ${daysBetween(first, today())} Tage`, 70, 165);
-  g.fillStyle = '#eef0f4'; g.font = '800 170px system-ui, sans-serif'; g.fillText(si == null ? '–' : `${si >= 0 ? '+' : ''}${Math.round(si)}%`, 64, 360);
-  g.fillStyle = '#8b93a3'; g.font = '36px system-ui, sans-serif'; g.fillText('stärker im Schnitt (geschätztes 1RM aller Übungen)', 70, 420);
+  g.fillStyle = '#f5c400'; g.font = '800 40px Unbounded, system-ui, sans-serif'; g.fillText('GYM · FORTSCHRITT', 70, 110);
+  g.fillStyle = '#9d968a'; g.font = '34px system-ui, sans-serif'; g.fillText(`${fmtDate(first)} bis ${fmtDate(today())} · ${daysBetween(first, today())} Tage`, 70, 165);
+  g.fillStyle = '#f4f0e6'; g.font = '800 150px Unbounded, system-ui, sans-serif'; g.fillText(si == null ? '–' : `${si >= 0 ? '+' : ''}${Math.round(si)}%`, 64, 360);
+  g.fillStyle = '#9d968a'; g.font = '36px system-ui, sans-serif'; g.fillText('stärker im Schnitt (geschätztes 1RM aller Übungen)', 70, 420);
   const tiles = [[all.length, 'Einheiten'], [fmtNum(totV / 1000) + ' t', 'bewegt'], [prs, 'Rekorde'], [bf.cur ? fmtNum(bf.cur) + ' kg' : '–', 'Bank 1RM']];
   tiles.forEach(([v, l], i) => { const x = 70 + (i % 2) * 480, y = 480 + Math.floor(i / 2) * 190;
     g.fillStyle = 'rgba(255,255,255,.06)'; g.beginPath(); g.roundRect(x, y, 450, 165, 28); g.fill();
-    g.fillStyle = '#eef0f4'; g.font = '800 70px system-ui, sans-serif'; g.fillText(String(v), x + 34, y + 92);
-    g.fillStyle = '#8b93a3'; g.font = '32px system-ui, sans-serif'; g.fillText(l, x + 36, y + 140); });
+    g.fillStyle = '#f4f0e6'; g.font = '800 64px Unbounded, system-ui, sans-serif'; g.fillText(String(v), x + 34, y + 92);
+    g.fillStyle = '#9d968a'; g.font = '32px system-ui, sans-serif'; g.fillText(l, x + 36, y + 140); });
   // Kurve: Bank-1RM bzw. Kraft-Index
   const ser = e1rmSeries(S.settings.benchEx).map(p => p.e);
   const pts = ser.length >= 2 ? ser : all.map(volume);
-  g.fillStyle = '#8b93a3'; g.font = '32px system-ui, sans-serif'; g.fillText(ser.length >= 2 ? `Bankdrücken auf dem Weg zu ${bf.goal} kg` : 'Volumen pro Einheit', 70, 920);
+  g.fillStyle = '#9d968a'; g.font = '32px system-ui, sans-serif'; g.fillText(ser.length >= 2 ? `Bankdrücken auf dem Weg zu ${bf.goal} kg` : 'Volumen pro Einheit', 70, 920);
   const x0 = 70, y0 = 950, w = 940, h = 220, mn = Math.min(...pts), mx = Math.max(...pts, ser.length >= 2 ? bf.goal : 0);
   const X = i => x0 + i / Math.max(1, pts.length - 1) * w, Y = v => y0 + h - (v - mn) / ((mx - mn) || 1) * h;
-  if (ser.length >= 2) { g.strokeStyle = '#3ccf7a'; g.setLineDash([10, 10]); g.lineWidth = 3; g.beginPath(); g.moveTo(x0, Y(bf.goal)); g.lineTo(x0 + w, Y(bf.goal)); g.stroke(); g.setLineDash([]); }
-  g.strokeStyle = '#ff7a1a'; g.lineWidth = 8; g.lineJoin = 'round'; g.beginPath(); pts.forEach((v, i) => i ? g.lineTo(X(i), Y(v)) : g.moveTo(X(i), Y(v))); g.stroke();
-  g.fillStyle = '#ffb066'; g.beginPath(); g.arc(X(pts.length - 1), Y(pts[pts.length - 1]), 14, 0, 7); g.fill();
+  if (ser.length >= 2) { g.strokeStyle = '#2fae5f'; g.setLineDash([10, 10]); g.lineWidth = 3; g.beginPath(); g.moveTo(x0, Y(bf.goal)); g.lineTo(x0 + w, Y(bf.goal)); g.stroke(); g.setLineDash([]); }
+  g.strokeStyle = '#f5c400'; g.lineWidth = 8; g.lineJoin = 'round'; g.beginPath(); pts.forEach((v, i) => i ? g.lineTo(X(i), Y(v)) : g.moveTo(X(i), Y(v))); g.stroke();
+  g.fillStyle = '#ffdf6b'; g.beginPath(); g.arc(X(pts.length - 1), Y(pts[pts.length - 1]), 14, 0, 7); g.fill();
   const weak = weakest(14)[0];
-  g.fillStyle = '#8b93a3'; g.font = '32px system-ui, sans-serif'; g.fillText(`Nächster Fokus: ${weak.k}${bf.eta ? ` · 100 kg Prognose: ${bf.eta.toLocaleDateString('de-DE', { month: 'short', year: 'numeric' })}` : ''}`, 70, 1260);
+  g.fillStyle = '#9d968a'; g.font = '32px system-ui, sans-serif'; g.fillText(`Nächster Fokus: ${weak.k}${bf.eta ? ` · 100 kg Prognose: ${bf.eta.toLocaleDateString('de-DE', { month: 'short', year: 'numeric' })}` : ''}`, 70, 1260);
   // Fotos: erstes und neuestes nebeneinander (Ausschnitt 3:4)
   const pw = pics.length === 2 ? 455 : 940, ph = 620;
   for (let i = 0; i < pics.length; i++) { const img = await new Promise(ok => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => ok(null); im.src = URL.createObjectURL(pics[i].blob); });
     if (!img) continue; const x = 70 + i * (pw + 30), y = 1330; const sc = Math.max(pw / img.width, ph / img.height); const sw = pw / sc, sh = ph / sc;
     g.save(); g.beginPath(); g.roundRect(x, y, pw, ph, 28); g.clip(); g.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, x, y, pw, ph); g.restore();
     g.fillStyle = 'rgba(0,0,0,.6)'; g.beginPath(); g.roundRect(x + 18, y + 18, 230, 56, 14); g.fill();
-    g.fillStyle = '#eef0f4'; g.font = '700 30px system-ui, sans-serif'; g.fillText(fmtDate(pics[i].date), x + 34, y + 57); }
-  if (pics.length) { g.fillStyle = '#8b93a3'; g.font = '30px system-ui, sans-serif'; g.fillText(pics.length === 2 ? `${daysBetween(pics[0].date, pics[1].date)} Tage dazwischen` : 'Neuestes Fortschrittsfoto', 70, 2000); }
+    g.fillStyle = '#f4f0e6'; g.font = '700 30px system-ui, sans-serif'; g.fillText(fmtDate(pics[i].date), x + 34, y + 57); }
+  if (pics.length) { g.fillStyle = '#9d968a'; g.font = '30px system-ui, sans-serif'; g.fillText(pics.length === 2 ? `${daysBetween(pics[0].date, pics[1].date)} Tage dazwischen` : 'Neuestes Fortschrittsfoto', 70, 2000); }
   return new Promise(ok => c.toBlob(ok, 'image/png'));
 }
 
@@ -750,6 +773,9 @@ document.addEventListener('click', async ev => {
   const a = t.dataset.act, v = t.dataset.v;
   switch (a) {
     case 'tab': closeDlg(); go(v); break;
+    case 'mapmode': mapMode = v; $('#bodymap').innerHTML = bodyMapInner(); break;
+    case 'mapdays': mapDays = +v; $('#bodymap').innerHTML = bodyMapInner(); break;
+    case 'muscle': { const i = mapData().info[v]; toast(`${v}: ${i.sets} Sätze (Ziel ${i.goal}, ${i.pct} %) · ${i.rec.d === null ? 'noch nie' : i.rec.d === 0 ? 'heute trainiert' : `zuletzt vor ${i.rec.d} T.`}`, 3500); break; }
     case 'start': closeDlg(); startSession(v); break;
     case 'done': markDone(v); break;
     case 'warm': { const [, st] = setAt(v); st.warm = !st.warm; save(); vTraining(); break; }

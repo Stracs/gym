@@ -241,12 +241,12 @@ function vWoche() {
   const vol = wks.map(k => S.sessions.filter(s => weekKey(s.date) === k).reduce((a, s) => a + volume(s), 0) / 1000);
   const cnt = wks.map(k => S.sessions.filter(s => weekKey(s.date) === k).length);
   mk('c-wk', { data: { labels: wks.map(k => fmtDate(k).slice(4)), datasets: [
-    { type: 'bar', label: 'Volumen (t)', data: vol, backgroundColor: wks.map(k => k === mon ? '#ff7a1a' : 'rgba(77,163,255,.35)'), borderRadius: 4, yAxisID: 'y' },
-    { type: 'line', label: 'Einheiten', data: cnt, borderColor: '#3ccf7a', backgroundColor: '#3ccf7a', yAxisID: 'y2', tension: .3 }] },
+    { type: 'bar', label: 'Volumen (t)', data: vol, backgroundColor: wks.map(k => k === mon ? '#f5c400' : 'rgba(44,116,224,.5)'), borderRadius: 4, yAxisID: 'y' },
+    { type: 'line', label: 'Einheiten', data: cnt, borderColor: '#2fae5f', backgroundColor: '#2fae5f', yAxisID: 'y2', tension: .3 }] },
     options: { scales: { y: { beginAtZero: true }, y2: { position: 'right', beginAtZero: true, suggestedMax: 4, ticks: { stepSize: 1 }, grid: { display: false } } } } });
   if (w.ss.length) mk('c-wkm', { type: 'bar', data: { labels: MUSCLES, datasets: [
-    { label: 'Sätze', data: MUSCLES.map(k => w.m[k]), backgroundColor: MUSCLES.map(k => w.m[k] >= WEEK_TARGET[k] ? '#3ccf7a' : '#ff7a1a'), borderRadius: 4 },
-    { label: 'Ziel', data: MUSCLES.map(k => WEEK_TARGET[k]), backgroundColor: 'rgba(139,147,163,.25)', borderRadius: 4 }] },
+    { label: 'Sätze', data: MUSCLES.map(k => w.m[k]), backgroundColor: MUSCLES.map(k => w.m[k] >= WEEK_TARGET[k] ? '#2fae5f' : '#f5c400'), borderRadius: 4 },
+    { label: 'Ziel', data: MUSCLES.map(k => WEEK_TARGET[k]), backgroundColor: 'rgba(157,150,138,.25)', borderRadius: 4 }] },
     options: { indexAxis: 'y', scales: { x: { beginAtZero: true } } } });
 }
 
@@ -265,7 +265,7 @@ function drawTrend() {
     for (const e of S.exercises) { const s = e1rmSeries(e.id); const upto = s.filter(p => p.date <= end); if (s.length && upto.length) vals.push(Math.max(...upto.map(p => p.e)) / s[0].e * 100); }
     return vals.length ? Math.round(vals.reduce((a, b) => a + b) / vals.length * 10) / 10 : null; });
   mk('c-trend', { data: { labels: wks.map(w => fmtDate(w).slice(4)), datasets: [
-    { type: 'line', label: 'Kraft-Index %', data: idx, borderColor: '#ff7a1a', backgroundColor: '#ff7a1a', yAxisID: 'y', spanGaps: true, tension: .3 },
-    { type: 'bar', label: 'Volumen (t)', data: vol, backgroundColor: 'rgba(77,163,255,.35)', yAxisID: 'y2', borderRadius: 4 }] },
+    { type: 'line', label: 'Kraft-Index %', data: idx, borderColor: '#f5c400', backgroundColor: '#f5c400', yAxisID: 'y', spanGaps: true, tension: .3 },
+    { type: 'bar', label: 'Volumen (t)', data: vol, backgroundColor: 'rgba(44,116,224,.5)', yAxisID: 'y2', borderRadius: 4 }] },
     options: { scales: { y: { suggestedMin: 95 }, y2: { position: 'right', beginAtZero: true, grid: { display: false } } } } });
 }
