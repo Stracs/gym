@@ -124,7 +124,8 @@ function coachHtml(sess) {
 }
 function coachDialog(id) {
   const s = S.sessions.find(x => x.id === id); if (!s) return;
-  openDlg(`<div class="row between"><h3>🧠 Rückmeldung · ${esc(day(s.dayId)?.name || 'Frei')} ${fmtDate(s.date)}</h3><button class="btn-sm" data-act="close">✕</button></div>${coachHtml(s)}<br><button class="btn btn-full" data-act="close">Verstanden</button>`);
+  const cl = s.claude && s.claude.text ? `<div class="alert ok" style="white-space:pre-wrap">💬 <b>Claude${s.claude.datum ? ' · ' + esc(s.claude.datum) : ''}</b><br>${esc(s.claude.text)}</div>` : '';
+  openDlg(`<div class="row between"><h3>🧠 Rückmeldung · ${esc(day(s.dayId)?.name || 'Frei')} ${fmtDate(s.date)}</h3><button class="btn-sm" data-act="close">✕</button></div>${cl}${coachHtml(s)}<br><button class="btn btn-full" data-act="close">Verstanden</button>`);
 }
 
 // ---------- Woche ----------

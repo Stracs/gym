@@ -1,7 +1,7 @@
 'use strict';
 // Gym – Hannes' Trainings-App. Daten bleiben auf dem Gerät (localStorage + IndexedDB für Fotos).
 
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 const KEY = 'gym.v1';
 const MUSCLES = ['Brust', 'Rücken', 'Schultern', 'Bizeps', 'Trizeps', 'Beine vorne', 'Beine hinten', 'Waden', 'Bauch'];
 const LEG_MUSCLES = ['Beine vorne', 'Beine hinten', 'Waden'];
@@ -99,6 +99,21 @@ const BK = {
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const cipher = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(value))));
     const all = new Uint8Array(12 + cipher.length); all.set(iv); all.set(cipher, 12); return this.b64(all); },
+  async decrypt(p, data) {
+    const all = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+    const key = await crypto.subtle.importKey('raw', Uint8Array.from(atob(p.s), c => c.charCodeAt(0)), 'AES-GCM', false, ['decrypt']);
+    return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: all.subarray(0, 12) }, key, all.subarray(12)))); },
+  // Rückweg (2.1.0): Claude legt Antworten auf Trainingsnotizen verschlüsselt ins selbe Postfach (art = antwort, geraet = pc).
+  async inbox() {
+    const p = this.pair; if (!p || !navigator.onLine) return;
+    const h = { apikey: p.k, 'x-stracs-postfach': p.p };
+    const r = await fetch(`${p.u}/rest/v1/pakete?select=id,inhalt&art=eq.antwort`, { headers: h }); if (!r.ok) return;
+    const rows = await r.json(), fertig = []; let neu = 0;
+    for (const row of rows) { try { const a = await this.decrypt(p, row.inhalt); const s = S.sessions.find(x => x.id === a.id);
+        if (s) { s.claude = { text: String(a.text || ''), datum: a.datum || '' }; neu++; fertig.push(row.id); } } catch (e) { console.warn('Antwort nicht lesbar', e); } }
+    if (neu) { save(); toast('💬 Claude hat auf dein Training geantwortet'); }
+    if (fertig.length) await fetch(`${p.u}/rest/v1/pakete?id=in.(${fertig.join(',')})`, { method: 'DELETE', headers: { ...h, Prefer: 'return=minimal' } });
+  },
   async post(art, payload) {
     const p = this.pair; const inhalt = await this.encrypt(p, payload);
     const r = await fetch(`${p.u}/rest/v1/pakete`, { method: 'POST', body: JSON.stringify({ postfach: p.p, geraet: 'gym', art, inhalt }),
@@ -118,6 +133,7 @@ const BK = {
           if (ph) await this.post('bild', { v: 1, kind: 'photo', id: ph.id, date: ph.date, mime: 'image/jpeg', data: this.b64(new Uint8Array(await ph.blob.arrayBuffer())) }); }
         this.out = this.out.filter(x => !(x.t === item.t && x.id === item.id));
         localStorage.setItem('gym.bk.last', new Date().toISOString()); }
+      await this.inbox();
     } catch (e) { console.warn('Briefkasten:', e); } finally { this.busy = false; if (tab === 'mehr' && !$('#dlg').open) vMehr(); }
   },
 };
